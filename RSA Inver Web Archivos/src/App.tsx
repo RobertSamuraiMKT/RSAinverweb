@@ -84,7 +84,6 @@ export default function App() {
   const [adminLoginError, setAdminLoginError] = useState<string>('');
 
   // 11. Sesión Activa de Supabase Auth en Producción Real
-  const [isSupabaseLive] = useState<boolean>(() => getSupabase() !== null);
   const [realAuthUser, setRealAuthUser] = useState<{ id: string; email: string; fullName: string; isAdmin: boolean } | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState<boolean>(true);
   const [cloudLoginEmail, setCloudLoginEmail] = useState<string>('');
@@ -435,21 +434,38 @@ export default function App() {
                     setIsCheckingSession(true);
 
                     try {
-                      const res = await import('./utils/supabaseClient').then(m => m.loginWithSupabase(cloudLoginEmail, cloudLoginPass));
+                      const m = await import('./utils/supabaseClient');
+                      const res = await m.loginWithSupabase(cloudLoginEmail, cloudLoginPass);
+                      
                       if (!res.success) {
-                        setCloudLoginErr(res.error || 'Credenciales incorrectas en la nube.');
+                        // Capturamos el error nativo explícito (por ejemplo, si Supabase rechaza la clave)
+                        setCloudLoginErr('Error de Supabase: ' + (res.error || 'Credenciales incorrectas en la nube.'));
+                        setIsCheckingSession(false);
                       } else if (res.data) {
-                        setRealAuthUser({
-                          id: res.data.id,
-                          email: res.data.email,
-                          fullName: res.data.fullName,
-                          isAdmin: res.data.isAdmin
-                        });
-                        window.location.reload();
+                        // Evaluamos en caliente si Supabase Auth ha devuelto la bandera isAdmin
+                        if (res.data.isAdmin) {
+                          setRealAuthUser({
+                            id: res.data.id,
+                            email: res.data.email,
+                            fullName: res.data.fullName,
+                            isAdmin: true
+                          });
+                          setIsCheckingSession(false);
+                        } else {
+                          // Ocurre si la sesión existe en auth.users pero RLS o la consulta bloquean
+                          // que is_admin sea leído como true. Alertamos atómicamente:
+                          alert('⚠️ ESTADO DE TU USUARIO EN SUPABASE:\n\nEl login de tu correo (' + res.data.email + ') ha sido correcto en Supabase Auth, pero la base de datos devuelve tu perfil con la celda is_admin = FALSE.\n\nPor favor, ve a Supabase → Table Editor → investor_profiles, asegúrate de hacer doble clic sobre el "false" en la columna is_admin, escribe "true" (sin comillas) y pulsa ENTER para guardar.');
+                          setRealAuthUser({
+                            id: res.data.id,
+                            email: res.data.email,
+                            fullName: res.data.fullName,
+                            isAdmin: false
+                          });
+                          setIsCheckingSession(false);
+                        }
                       }
                     } catch (err) {
-                      setCloudLoginErr(String(err));
-                    } finally {
+                      setCloudLoginErr('Error de conexión: ' + String(err));
                       setIsCheckingSession(false);
                     }
                   }} 

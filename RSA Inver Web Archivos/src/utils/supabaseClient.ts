@@ -6,14 +6,16 @@ export function getSupabaseCredentials() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const metaEnv = (import.meta as any).env || {};
   
-  // Valores leídos estrictamente desde variables de entorno inyectadas por Vercel
+  // REQUISITO 1 Y 2: Valores leídos EXCLUSIVAMENTE desde variables de entorno inyectadas por Vercel.
+  // Se ignora de forma absoluta y total cualquier valor guardado en localStorage.
   const envUrl = metaEnv.VITE_SUPABASE_URL || '';
   const envKey = metaEnv.VITE_SUPABASE_ANON_KEY || '';
 
-  const localUrl = localStorage.getItem('rsa_supabase_url') || envUrl;
-  const localKey = localStorage.getItem('rsa_supabase_anon_key') || envKey;
+  console.log('🔒 [AUDITORÍA SUPABASE CLIENT] Variables de entorno Vercel detectadas:');
+  console.log('  • VITE_SUPABASE_URL cargada:', envUrl ? 'SÍ' : 'NO', envUrl);
+  console.log('  • VITE_SUPABASE_ANON_KEY cargada:', envKey ? 'SÍ' : 'NO', envKey.substring(0, 10) + '...');
 
-  return { url: localUrl.trim(), anonKey: localKey.trim() };
+  return { url: envUrl.trim(), anonKey: envKey.trim() };
 }
 
 export function saveSupabaseCredentials(url: string, anonKey: string) {
@@ -502,24 +504,79 @@ export async function getCurrentSupabaseUser(): Promise<{ success: boolean; data
 }
 
 /**
- * Inicia sesión real con Supabase Auth
+ * Inicia sesión real con Supabase Auth (Con depuración exhaustiva en consola)
  */
-export async function loginWithSupabase(email: string, pass: string): Promise<{ success: boolean; data?: ActiveSessionData; error?: string }> {
+export async function loginWithSupabase(email: string, pass: string): Promise<{ success: boolean; data?: ActiveSessionData; error?: string; debugLog?: string[] }> {
   const supabase = getSupabase();
-  if (!supabase) return { success: false, error: 'Supabase no está configurado.' };
+  const creds = getSupabaseCredentials();
+  const logs: string[] = [];
+
+  logs.push(`URL cargada: ${creds.url ? 'SÍ' : 'NO'} (${creds.url})`);
+  logs.push(`Key cargada: ${creds.anonKey ? 'SÍ' : 'NO'}`);
+
+  if (!supabase) {
+    logs.push('ERROR: Instancia de Supabase nula.');
+    return { success: false, error: 'Supabase no está configurado en Vercel.', debugLog: logs };
+  }
 
   try {
-    const { error } = await supabase.auth.signInWithPassword({
+    logs.push(`Iniciando signInWithPassword para: ${email.trim()}`);
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password: pass
     });
 
-    if (error) throw error;
+    if (error) {
+      logs.push(`RESULTADO signInWithPassword: FALLO (${error.message})`);
+      throw error;
+    }
 
-    // Obtener la sesión activa para validar perfiles y roles
-    return await getCurrentSupabaseUser();
+    const userId = authData.user?.id;
+    logs.push(`RESULTADO signInWithPassword: ÉXITO (user.id: ${userId})`);
+
+    if (!userId) {
+      throw new Error('No se recibió el user.id tras el login');
+    }
+
+    logs.push(`Consultando tabla investor_profiles para verificar is_admin...`);
+    const { data: profileData, error: profileError } = await supabase
+      .from('investor_profiles')
+      .select('username, full_name, is_admin')
+      .eq('id', userId)
+      .single();
+
+    if (profileError) {
+      logs.push(`VERIFICACIÓN is_admin: FALLO o RLS denegado (${profileError.message})`);
+      return {
+        success: true,
+        data: {
+          id: userId,
+          email: authData.user?.email || email,
+          fullName: authData.user?.user_metadata?.full_name || 'Inversor',
+          username: email.split('@')[0],
+          isAdmin: false
+        },
+        debugLog: logs
+      };
+    }
+
+    logs.push(`VERIFICACIÓN is_admin: CONFIRMADO (is_admin = ${profileData?.is_admin === true ? 'TRUE' : 'FALSE'})`);
+
+    return {
+      success: true,
+      data: {
+        id: userId,
+        email: authData.user?.email || email,
+        fullName: profileData?.full_name || authData.user?.user_metadata?.full_name || 'Inversor',
+        username: profileData?.username || email.split('@')[0],
+        isAdmin: profileData?.is_admin === true
+      },
+      debugLog: logs
+    };
   } catch (err: unknown) {
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logs.push(`EXCEPCIÓN CRÍTICA: ${errorMsg}`);
+    return { success: false, error: errorMsg, debugLog: logs };
   }
 }
 

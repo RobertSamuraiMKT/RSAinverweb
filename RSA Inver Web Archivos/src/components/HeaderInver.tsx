@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Building2, ShieldCheck, UserCheck, Users, RefreshCw, Smartphone, BarChart3, Briefcase, Rocket, Package, Database, Key, CheckCircle2, AlertCircle } from 'lucide-react';
+import React from 'react';
+import { Building2, ShieldCheck, UserCheck, Users, RefreshCw, Smartphone, BarChart3, Briefcase, Rocket, Package } from 'lucide-react';
 import { InvestorUser, AppNotification } from '../types/inver';
 import { NotificationCenter } from './NotificationCenter';
-import { getSupabaseCredentials, saveSupabaseCredentials, getSupabase } from '../utils/supabaseClient';
+import { getSupabaseCredentials } from '../utils/supabaseClient';
 
 export type AdminSection = 'operations' | 'stats' | 'deployment' | 'materials';
 
@@ -37,12 +37,7 @@ export const HeaderInver: React.FC<HeaderInverProps> = ({
   setAdminSection
 }) => {
   const currentInv = investors.find(i => i.id === loggedInvestorId);
-
-  const [showSupabasePanel, setShowSupabasePanel] = useState<boolean>(false);
   const creds = getSupabaseCredentials();
-  const [urlInput, setUrlInput] = useState<string>(creds.url);
-  const [keyInput, setKeyInput] = useState<string>(creds.anonKey);
-  const isSupabaseLive = getSupabase() !== null;
 
   return (
     <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-50 shadow-md">
@@ -137,100 +132,15 @@ export const HeaderInver: React.FC<HeaderInverProps> = ({
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
 
-            {/* Indicador y botón del Panel Supabase en Vivo */}
-            <button
-              onClick={() => setShowSupabasePanel(!showSupabasePanel)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                isSupabaseLive
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse'
-                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-              }`}
-              title="Panel de conexión a base de datos de producción Supabase"
-            >
-              <Database className="w-3 h-3 flex-shrink-0" />
-              <span>{isSupabaseLive ? '🟢 Supabase RLS Activo' : '🟡 Modo Local (Demo)'}</span>
-            </button>
+            {/* AUDITORÍA VISUAL EN TIEMPO REAL (REQUISITO 3, 4 Y 6) */}
+            <div className="bg-slate-900 border border-slate-700 px-2.5 py-1 rounded-lg text-[10px] text-slate-300 font-mono space-y-0.5">
+              <div>URL Vercel: <strong className={creds.url ? "text-emerald-400" : "text-rose-400"}>{creds.url ? "SÍ" : "NO"}</strong></div>
+              <div>Key Vercel: <strong className={creds.anonKey ? "text-emerald-400" : "text-rose-400"}>{creds.anonKey ? "SÍ" : "NO"}</strong></div>
+            </div>
 
           </div>
 
         </div>
-
-        {/* PANEL EXPANDIBLE DE CONEXIÓN A PRODUCCIÓN SUPABASE */}
-        {showSupabasePanel && (
-          <div className="bg-slate-950 p-4 rounded-xl border border-amber-500/30 my-2 animate-fade-in text-xs space-y-3">
-            <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-2">
-              <div className="flex items-center gap-2 text-amber-400 font-bold">
-                <Key className="w-4 h-4" />
-                <span>Configuración de Credenciales de Producción Supabase</span>
-              </div>
-              <button 
-                onClick={() => setShowSupabasePanel(false)}
-                className="text-slate-500 hover:text-white font-bold"
-              >
-                ✕ Cerrar
-              </button>
-            </div>
-
-            <p className="text-slate-300 font-light leading-tight">
-              Para activar el login con autenticación nativa (auth.users) y aplicar las reglas de <strong>Row Level Security (RLS)</strong>, introduce la URL y Anon Key de tu proyecto de Supabase.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] text-slate-400 uppercase font-bold mb-1">
-                  Supabase URL:
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://tu-proyecto.supabase.co"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 font-mono text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 uppercase font-bold mb-1">
-                  Supabase Anon Key:
-                </label>
-                <input
-                  type="text"
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 font-mono text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <div className="flex items-center gap-1 text-[11px]">
-                {isSupabaseLive ? (
-                  <span className="text-emerald-400 flex items-center gap-1 font-bold">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    ¡Conexión real disponible en el navegador!
-                  </span>
-                ) : (
-                  <span className="text-amber-400 flex items-center gap-1 font-bold">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Actualmente en modo demo interactivo persistente.
-                  </span>
-                )}
-              </div>
-
-              <button
-                onClick={() => {
-                  saveSupabaseCredentials(urlInput, keyInput);
-                  alert('✓ Credenciales guardadas correctamente.\n\nLa aplicación intentará conectarse instantáneamente a Supabase para validar usuarios e inyectar RLS.');
-                  window.location.reload();
-                }}
-                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-1.5 rounded transition-colors"
-              >
-                Guardar y Conectar
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Admin Sub-Navigation tabs */}
         {currentRole === 'admin' && (
