@@ -467,15 +467,15 @@ export async function getCurrentSupabaseUser(): Promise<{ success: boolean; data
 
     const user = session.user;
     
-    // Consultar el perfil en la tabla securizada para ver si is_admin = true
+    // REQUISITOS 1, 2, 3 Y 4: Consultar la tabla filtrando por el ID exacto y seleccionando explícitamente
     const { data: profileData, error: profileError } = await supabase
       .from('investor_profiles')
-      .select('username, full_name, is_admin')
+      .select('id, email, username, full_name, is_admin')
       .eq('id', user.id)
       .single();
 
     if (profileError) {
-      // Si RLS bloquea o no existe, devolvemos como inversor básico
+      console.log('🔒 [AUDITORÍA RLS/AUTH] getSession - Fallo o RLS denegado:', profileError.message);
       return {
         success: true,
         data: {
@@ -488,14 +488,24 @@ export async function getCurrentSupabaseUser(): Promise<{ success: boolean; data
       };
     }
 
+    // Evaluamos con === true garantizado
+    const isAdminCalc = profileData.is_admin === true;
+
+    console.log('🔒 [AUDITORÍA RLS/AUTH] getSession - Perfil leído con éxito:');
+    console.log('  • auth.user.id:', user.id);
+    console.log('  • profile.id:', profileData.id);
+    console.log('  • profile.email:', profileData.email);
+    console.log('  • profile.is_admin devuelto por Supabase:', profileData.is_admin);
+    console.log('  • ROL CALCULADO FINAL:', isAdminCalc ? 'ADMIN' : 'INVERSOR');
+
     return {
       success: true,
       data: {
         id: user.id,
-        email: user.email || '',
-        fullName: profileData?.full_name || user.user_metadata?.full_name || 'Inversor',
-        username: profileData?.username || 'inversor',
-        isAdmin: profileData?.is_admin || false
+        email: profileData.email || user.email || '',
+        fullName: profileData.full_name || user.user_metadata?.full_name || 'Inversor',
+        username: profileData.username || 'inversor',
+        isAdmin: isAdminCalc
       }
     };
   } catch (err: unknown) {
@@ -539,14 +549,17 @@ export async function loginWithSupabase(email: string, pass: string): Promise<{ 
     }
 
     logs.push(`Consultando tabla investor_profiles para verificar is_admin...`);
+    
+    // REQUISITOS 1, 2, 3 Y 4: Selección explícita de columnas en Supabase
     const { data: profileData, error: profileError } = await supabase
       .from('investor_profiles')
-      .select('username, full_name, is_admin')
+      .select('id, email, username, full_name, is_admin')
       .eq('id', userId)
       .single();
 
     if (profileError) {
       logs.push(`VERIFICACIÓN is_admin: FALLO o RLS denegado (${profileError.message})`);
+      console.log('🔒 [AUDITORÍA LOGIN] Fallo al consultar perfil:', profileError.message);
       return {
         success: true,
         data: {
@@ -560,16 +573,27 @@ export async function loginWithSupabase(email: string, pass: string): Promise<{ 
       };
     }
 
-    logs.push(`VERIFICACIÓN is_admin: CONFIRMADO (is_admin = ${profileData?.is_admin === true ? 'TRUE' : 'FALSE'})`);
+    const isAdminCalc = profileData.is_admin === true;
+
+    // REQUISITO 7: Log visible/consola absoluto
+    console.log('🔒 [AUDITORÍA LOGIN EXHAUSTIVO] Inicio de sesión completado:');
+    console.log('  • auth.user.id:', userId);
+    console.log('  • profile.id:', profileData.id);
+    console.log('  • profile.email:', profileData.email);
+    console.log('  • profile.is_admin devuelto en celda:', profileData.is_admin);
+    console.log('  • ROL CALCULADO FINAL:', isAdminCalc ? 'ADMINISTRADOR' : 'INVERSOR');
+
+    logs.push(`VERIFICACIÓN is_admin: CONFIRMADO (is_admin = ${isAdminCalc ? 'TRUE' : 'FALSE'})`);
+    logs.push(`ROL CALCULADO: ${isAdminCalc ? 'ADMIN' : 'INVERSOR'}`);
 
     return {
       success: true,
       data: {
         id: userId,
-        email: authData.user?.email || email,
-        fullName: profileData?.full_name || authData.user?.user_metadata?.full_name || 'Inversor',
-        username: profileData?.username || email.split('@')[0],
-        isAdmin: profileData?.is_admin === true
+        email: profileData.email || authData.user?.email || email,
+        fullName: profileData.full_name || authData.user?.user_metadata?.full_name || 'Inversor',
+        username: profileData.username || email.split('@')[0],
+        isAdmin: isAdminCalc
       },
       debugLog: logs
     };

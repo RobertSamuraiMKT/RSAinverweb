@@ -570,12 +570,26 @@ export default function App() {
 
             ) : (
               
-              /* USUARIO LOGUEADO EN SUPABASE: RENDERIZAR SEGÚN ROL NATIVO VERIFICADO */
+              /* USUARIO LOGUEADO EN SUPABASE: RENDERIZAR SEGÚN ROL NATIVO VERIFICADO (PREFERENCIA ADMIN) */
               <div>
+                {/* BLOQUE DE DEPURACIÓN VISIBLE EXCLUSIVO (REQUISITO 7) */}
+                <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-xl mb-6 text-xs text-slate-800 space-y-1 font-mono">
+                  <div className="font-black text-amber-950 uppercase pb-1 border-b border-amber-200">
+                    🛠️ BLOQUE TEMPORAL DE DEPURACIÓN (ESTADO DEL ROL):
+                  </div>
+                  <div>• auth.user.id: <strong className="text-slate-900">{realAuthUser.id}</strong></div>
+                  <div>• profile.email: <strong className="text-slate-900">{realAuthUser.email}</strong></div>
+                  <div>• profile.is_admin leída en BD: <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
+                  <div>• realAuthUser.isAdmin interno: <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
+                  <div>• rol calculado final: <strong className="bg-white px-1 rounded text-slate-900 font-bold">{realAuthUser.isAdmin ? "ADMIN" : "INVERSOR"}</strong></div>
+                  <div>• vista renderizada: <strong className="bg-white px-1 rounded text-indigo-900 font-bold">{realAuthUser.isAdmin ? "BackOffice Comercial (AdminDashboard)" : "Portal Privado Inversor (InvestorPortal)"}</strong></div>
+                </div>
+
                 <div className="bg-slate-900 text-white p-3 rounded-xl mb-6 flex flex-col sm:flex-row items-center justify-between text-xs gap-2">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                    <span>Conexión encriptada activa como: <strong className="text-amber-400 font-mono">{realAuthUser.email}</strong> ({realAuthUser.isAdmin ? '👑 ADMIN CORPORATIVO' : '👤 INVERSOR'})</span>
+                    {/* REQUISITO 4: Etiqueta literal exacta con (ADMIN) */}
+                    <span>Conexión encriptada activa como: <strong className="text-amber-400 font-mono">{realAuthUser.email}</strong> ({realAuthUser.isAdmin ? 'ADMIN' : 'INVERSOR'})</span>
                   </div>
 
                   <button
@@ -589,7 +603,8 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* VISTA EXCLUYENTE SEGÚN EL ROL AUTÉNTICO VERIFICADO EN BD (REQUISITO 2 Y 3) */}
+                {/* VISTA EXCLUYENTE SEGÚN EL ROL AUTÉNTICO VERIFICADO EN BD (REQUISITO 1, 2, 3, 5 Y 6) */}
+                {/* PREFERENCIA ABSOLUTA: Si isAdmin es true, se fuerza ineludiblemente el BackOffice comercial */}
                 {realAuthUser.isAdmin ? (
                   
                   /* ADMIN REAL VERIFICADO */

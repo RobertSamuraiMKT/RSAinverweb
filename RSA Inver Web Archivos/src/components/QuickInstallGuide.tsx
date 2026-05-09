@@ -130,10 +130,28 @@ export const QuickInstallGuide: React.FC<QuickInstallGuideProps> = ({ onClose })
 
                 for (const path of files) {
                   try {
-                    const res = await fetch('/' + path);
-                    if (res.ok) {
-                      const content = await res.text();
-                      zip.file(path, content);
+                    // REQUISITO INELUDIBLE: El index.html fuente debe ser el archivo puro de Vite.
+                    // Evitamos hacer fetch a la red porque los servidores de previsualización inyectan código minificado/inválido.
+                    if (path === 'index.html') {
+                      const pureHtml = `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RSA Inver Portal</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>`;
+                      zip.file(path, pureHtml);
+                    } else {
+                      const res = await fetch('/' + path);
+                      if (res.ok) {
+                        const content = await res.text();
+                        zip.file(path, content);
+                      }
                     }
                   } catch (err) {
                     console.error('Error inyectando ' + path, err);
