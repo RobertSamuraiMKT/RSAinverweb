@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { HistoryTimeline } from './HistoryTimeline';
 import { exportPortfolioReport, exportSingleOfferReport, exportInvestorReport } from '../utils/pdfExport';
+import { createRealInvestorProfile, createRealOffer, getSupabase } from '../utils/supabaseClient';
 
 interface AdminDashboardProps {
   investors: InvestorUser[];
@@ -72,7 +73,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Formulario temporal para añadir un ítem de documentación faltante a una oferta
   const [docInputs, setDocInputs] = useState<Record<string, string>>({});
 
-  const handleAddInvestor = (e: React.FormEvent) => {
+  const handleAddInvestor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInvFullName.trim() || !newInvUsername.trim()) {
       alert('Por favor rellena al menos el Nombre Completo y el Usuario.');
@@ -85,19 +86,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
-    const newUser: InvestorUser = {
-      id: 'inv-' + Date.now(),
-      username: newInvUsername.trim(),
-      password: newInvPassword || 'rsa1234',
-      fullName: newInvFullName.trim(),
-      email: newInvEmail.trim() || `${newInvUsername}@inversor.com`,
-      phone: newInvPhone.trim() || '+34 600 000 000',
-      companyName: newInvCompany.trim() || 'Inversor Particular',
-      createdAt: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
-    };
+    const emailVal = newInvEmail.trim() || `${newInvUsername.trim().toLowerCase()}@inversor.com`;
 
-    setInvestors([newUser, ...investors]);
-    setTargetInvestorId(newUser.id); // Seleccionarlo por defecto para ofertas
+    if (getSupabase()) {
+      // Registrar en Supabase Auth real
+      const res = await createRealInvestorProfile({
+        username: newInvUsername.trim(),
+        password: newInvPassword || 'rsa1234',
+        fullName: newInvFullName.trim(),
+        email: emailVal,
+        phone: newInvPhone.trim() || '+34 600 000 000',
+        companyName: newInvCompany.trim() || 'Inversor Particular',
+        createdAt: ''
+      });
+
+      if (!res.success || !res.data) {
+        alert('Error al registrar en Supabase Auth: ' + res.error);
+        return;
+      }
+
+      setInvestors([res.data, ...investors]);
+      setTargetInvestorId(res.data.id);
+    } else {
+      // Modo persistente local
+      const newUser: InvestorUser = {
+        id: 'inv-' + Date.now(),
+        username: newInvUsername.trim(),
+        password: newInvPassword || 'rsa1234',
+        fullName: newInvFullName.trim(),
+        email: emailVal,
+        phone: newInvPhone.trim() || '+34 600 000 000',
+        companyName: newInvCompany.trim() || 'Inversor Particular',
+        createdAt: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
+      };
+
+      setInvestors([newUser, ...investors]);
+      setTargetInvestorId(newUser.id);
+    }
 
     // Resetear formulario
     setNewInvUsername('');
@@ -107,10 +132,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setNewInvPhone('');
     setNewInvCompany('');
 
-    alert(`¡Inversor "${newUser.fullName}" dado de alta con éxito con usuario "${newUser.username}"!`);
+    alert(`¡Inversor dado de alta con éxito con usuario "${newInvUsername.trim()}"!`);
   };
 
-  const handleCreateOffer = (e: React.FormEvent) => {
+  const handleCreateOffer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAssetTitle.trim()) {
       alert('Por favor indica el título/dirección del inmueble.');
@@ -123,23 +148,63 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const randRef = 'REF-' + newServicer.substring(0, 3).toUpperCase() + '-' + Math.floor(1000 + Math.random() * 9000);
 
-    const newOffer: AssetOffer = {
-      id: 'off-' + Date.now(),
-      investorId: targetInvestorId,
-      assetTitle: newAssetTitle.trim(),
-      bankOrServicer: newServicer,
-      offerAmount: Number(newOfferAmount) || 0,
-      originalPrice: Number(newOriginalPrice) || 0,
-      phase: newPhase,
-      dateSubmitted: new Date().toISOString().split('T')[0],
-      missingDocs: [],
-      pbcPassed: newPhase === 'pbc_ok' || newPhase === 'firma_fijada',
-      notes: newNotes.trim() || 'Oferta registrada en el sistema de gestión de RSA Inver.',
-      reference: randRef,
-      history: [logCreated(Number(newOfferAmount) || 0, newServicer)]
-    };
+    if (getSupabase()) {
+      const res = await createRealOffer({
+        investorId: targetInvestorId,
+        assetTitle: newAssetTitle.trim(),
+        bankOrServicer: newServicer,
+        offerAmount: Number(newOfferAmount) || 0,
+        originalPrice: Number(newOriginalPrice) || 0,
+        phase: newPhase,
+        dateSubmitted: new Date().toISOString().split('T')[0],
+        pbcPassed: newPhase === 'pbc_ok' || newPhase === 'firma_fijada',
+        notes: newNotes.trim() || 'Oferta registrada en el sistema de gestión de RSA Inver.',
+        reference: randRef
+      });
 
-    setOffers([newOffer, ...offers]);
+      if (!res.success) {
+        alert('Error al guardar en Supabase: ' + res.error);
+        return;
+      }
+      
+      const assignedId = res.data?.id || ('off-' + Date.now());
+      const newOffer: AssetOffer = {
+        id: assignedId,
+        investorId: targetInvestorId,
+        assetTitle: newAssetTitle.trim(),
+        bankOrServicer: newServicer,
+        offerAmount: Number(newOfferAmount) || 0,
+        originalPrice: Number(newOriginalPrice) || 0,
+        phase: newPhase,
+        dateSubmitted: new Date().toISOString().split('T')[0],
+        missingDocs: [],
+        pbcPassed: newPhase === 'pbc_ok' || newPhase === 'firma_fijada',
+        notes: newNotes.trim() || 'Oferta registrada en el sistema de gestión de RSA Inver.',
+        reference: randRef,
+        history: [logCreated(Number(newOfferAmount) || 0, newServicer)]
+      };
+
+      setOffers([newOffer, ...offers]);
+    } else {
+      const newOffer: AssetOffer = {
+        id: 'off-' + Date.now(),
+        investorId: targetInvestorId,
+        assetTitle: newAssetTitle.trim(),
+        bankOrServicer: newServicer,
+        offerAmount: Number(newOfferAmount) || 0,
+        originalPrice: Number(newOriginalPrice) || 0,
+        phase: newPhase,
+        dateSubmitted: new Date().toISOString().split('T')[0],
+        missingDocs: [],
+        pbcPassed: newPhase === 'pbc_ok' || newPhase === 'firma_fijada',
+        notes: newNotes.trim() || 'Oferta registrada en el sistema de gestión de RSA Inver.',
+        reference: randRef,
+        history: [logCreated(Number(newOfferAmount) || 0, newServicer)]
+      };
+
+      setOffers([newOffer, ...offers]);
+    }
+
     setNewAssetTitle('');
     setNewNotes('');
     alert('¡Inmueble y oferta lanzada registrada exitosamente!');
