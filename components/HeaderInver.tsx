@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, ShieldCheck, UserCheck, Users, RefreshCw, Smartphone, BarChart3, Briefcase, Rocket, Package } from 'lucide-react';
+import { Building2, ShieldCheck, Users, RefreshCw, Smartphone, BarChart3, Briefcase, Rocket, Package } from 'lucide-react';
 import { InvestorUser, AppNotification } from '../types/inver';
 import { NotificationCenter } from './NotificationCenter';
 import { getSupabaseCredentials } from '../utils/supabaseClient';
@@ -11,7 +11,6 @@ interface HeaderInverProps {
   setRole: (r: 'admin' | 'investor') => void;
   investors: InvestorUser[];
   loggedInvestorId: string;
-  setLoggedInvestorId: (id: string) => void;
   resetDatabase: () => void;
   notifications: AppNotification[];
   markNotifAsRead: (id: string) => void;
@@ -27,7 +26,6 @@ export const HeaderInver: React.FC<HeaderInverProps> = ({
   setRole,
   investors,
   loggedInvestorId,
-  setLoggedInvestorId,
   resetDatabase,
   notifications,
   markNotifAsRead,
@@ -36,7 +34,6 @@ export const HeaderInver: React.FC<HeaderInverProps> = ({
   adminSection,
   setAdminSection
 }) => {
-  const currentInv = investors.find(i => i.id === loggedInvestorId);
   const creds = getSupabaseCredentials();
 
   return (
@@ -93,24 +90,7 @@ export const HeaderInver: React.FC<HeaderInverProps> = ({
               <span>Portal del Inversor</span>
             </button>
 
-            {/* Quick selector when on investor view */}
-            {currentRole === 'investor' && (
-              <div className="flex items-center gap-1 pl-2 border-l border-slate-800">
-                <UserCheck className="w-3.5 h-3.5 text-amber-500" />
-                <select
-                  value={loggedInvestorId}
-                  onChange={(e) => setLoggedInvestorId(e.target.value)}
-                  className="bg-slate-900 text-amber-400 text-xs font-bold rounded px-2 py-1 border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer max-w-[140px] truncate"
-                  title="Simulador: Elige qué cliente inversor ha iniciado sesión"
-                >
-                  {investors.map((inv) => (
-                    <option key={inv.id} value={inv.id}>
-                      {inv.fullName} ({inv.username})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+
 
             {/* Notification center */}
             <NotificationCenter
@@ -208,11 +188,7 @@ export const HeaderInver: React.FC<HeaderInverProps> = ({
             </span>
           </div>
 
-          {currentRole === 'investor' && currentInv && (
-            <div className="text-slate-400 font-mono text-[11px] bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-              Usuario actual: <strong className="text-white">{currentInv.username}</strong> | Clave: <strong className="text-amber-400">{currentInv.password}</strong>
-            </div>
-          )}
+
         </div>
       </div>
     </header>
