@@ -126,11 +126,7 @@ export default function App() {
           .eq('id', user.id)
           .single();
 
-        profileRaw = {
-          ...(directData || {}),
-          auth_user_email: user.email,
-          admin_by_email: isAdminVal
-        };
+        profileRaw = directData || {};
         
         setRealAuthUser({
           id: user.id,
@@ -581,28 +577,12 @@ export default function App() {
               
               /* USUARIO LOGUEADO EN SUPABASE: RENDERIZAR SEGÚN ROL NATIVO VERIFICADO (PREFERENCIA ADMIN) */
               <div>
-                {/* REQUISITO 7: BLOQUE DE DEPURACIÓN VISIBLE (DEBE DECIR TRUE PARA ADMIN) */}
-                <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-xl mb-6 text-xs text-slate-800 space-y-2 font-mono overflow-x-auto">
-                  <div className="font-black text-amber-950 uppercase pb-1 border-b border-amber-200">
-                    🛠️ BLOQUE DE DEPURACIÓN (ESTADO DEL ROL):
-                  </div>
-                  <div>• auth.user.email: <strong className="text-slate-900">{realAuthUser.email}</strong></div>
-                  <div>• admin por email (regla): <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
-                  <div>• vista renderizada: <strong className="bg-white px-1 rounded text-indigo-900 font-bold">{realAuthUser.isAdmin ? "BackOffice" : "Portal Inversor"}</strong></div>
-                  
-                  <div className="mt-2 pt-2 border-t border-amber-200">
-                    <span className="text-[10px] font-bold text-amber-950 block mb-1">OBJETO RAW:</span>
-                    <pre className="bg-white p-2 rounded border border-amber-300 text-[11px] text-slate-900 max-h-40 overflow-y-auto">
-                      {JSON.stringify(realAuthUser.rawProfile || { error: 'No se obtuvo objeto raw' }, null, 2)}
-                    </pre>
-                  </div>
-                </div>
+
 
                 <div className="bg-slate-900 text-white p-3 rounded-xl mb-6 flex flex-col sm:flex-row items-center justify-between text-xs gap-2">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                    {/* REQUISITO 4: Etiqueta literal exacta con (ADMIN) */}
-                    <span>Conexión encriptada activa como: <strong className="text-amber-400 font-mono">{realAuthUser.email}</strong> ({realAuthUser.isAdmin ? 'ADMIN' : 'INVERSOR'})</span>
+                    <span>Sesión verificada: <strong className="text-amber-400 font-mono">{realAuthUser.email}</strong></span>
                   </div>
 
                   <button
