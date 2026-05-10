@@ -114,35 +114,30 @@ export default function App() {
 
         const user = session.user;
         let profileRaw: unknown = null;
-        let isAdminVal = false;
-
-        // REQUISITO 2 Y 7: Intentamos leer el rol desde la RPC inviolable get_my_profile()
-        // Si no está disponible, forzamos lectura cualificada explícita por el ID exacto.
-        const { data: rpcData, error: rpcError } = await supabase!.rpc('get_my_profile');
         
-        if (!rpcError && rpcData) {
-          profileRaw = rpcData;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          isAdminVal = (rpcData as any).is_admin === true;
-        } else {
-          const { data: directData } = await supabase!
-            .from('investor_profiles')
-            .select('id, email, username, full_name, is_admin')
-            .eq('id', user.id)
-            .single();
+        // REQUISITO 2: Determinar admin por email
+        const ADMIN_EMAILS = ['rsa@rsainver.com'];
+        const isAdminVal = ADMIN_EMAILS.includes((user.email || '').trim().toLowerCase());
 
-          if (directData) {
-            profileRaw = directData;
-            isAdminVal = directData.is_admin === true;
-          }
-        }
+        // Leer perfil para datos de presentación
+        const { data: directData } = await supabase!
+          .from('investor_profiles')
+          .select('id, email, username, full_name, is_admin')
+          .eq('id', user.id)
+          .single();
+
+        profileRaw = {
+          ...(directData || {}),
+          auth_user_email: user.email,
+          admin_by_email: isAdminVal
+        };
         
         setRealAuthUser({
           id: user.id,
           email: user.email || '',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           fullName: (profileRaw as any)?.full_name || user.user_metadata?.full_name || 'Inversor',
-          isAdmin: isAdminVal,
+          isAdmin: isAdminVal, // REQUISITO 2: Basado estrictamente en email
           rawProfile: profileRaw
         });
 
@@ -464,27 +459,19 @@ export default function App() {
                         setCloudLoginErr('Error de Supabase: ' + (res.error || 'Credenciales incorrectas en la nube.'));
                         setIsCheckingSession(false);
                       } else if (res.data) {
-                        // Evaluamos en caliente si Supabase Auth ha devuelto la bandera isAdmin
-                        if (res.data.isAdmin) {
-                          setRealAuthUser({
-                            id: res.data.id,
-                            email: res.data.email,
-                            fullName: res.data.fullName,
-                            isAdmin: true
-                          });
-                          setIsCheckingSession(false);
-                        } else {
-                          // Ocurre si la sesión existe en auth.users pero RLS o la consulta bloquean
-                          // que is_admin sea leído como true. Alertamos atómicamente:
-                          alert('⚠️ ESTADO DE TU USUARIO EN SUPABASE:\n\nEl login de tu correo (' + res.data.email + ') ha sido correcto en Supabase Auth, pero la base de datos devuelve tu perfil con la celda is_admin = FALSE.\n\nPor favor, ve a Supabase → Table Editor → investor_profiles, asegúrate de hacer doble clic sobre el "false" en la columna is_admin, escribe "true" (sin comillas) y pulsa ENTER para guardar.');
-                          setRealAuthUser({
-                            id: res.data.id,
-                            email: res.data.email,
-                            fullName: res.data.fullName,
-                            isAdmin: false
-                          });
-                          setIsCheckingSession(false);
-                        }
+                        setRealAuthUser({
+                          id: res.data.id,
+                          email: res.data.email,
+                          fullName: res.data.fullName,
+                          isAdmin: res.data.isAdmin,
+                          rawProfile: {
+                            auth_user_id: res.data.id,
+                            auth_user_email: res.data.email,
+                            admin_by_email: res.data.isAdmin,
+                            role_source: 'ADMIN_EMAILS'
+                          }
+                        });
+                        setIsCheckingSession(false);
                       }
                     } catch (err) {
                       setCloudLoginErr('Error de conexión: ' + String(err));
@@ -594,20 +581,19 @@ export default function App() {
               
               /* USUARIO LOGUEADO EN SUPABASE: RENDERIZAR SEGÚN ROL NATIVO VERIFICADO (PREFERENCIA ADMIN) */
               <div>
-                {/* REQUISITO 3 Y 7: BLOQUE DE DEPURACIÓN VISIBLE CON OBJETO RAW EXACTO */}
+                {/* REQUISITO 7: BLOQUE DE DEPURACIÓN VISIBLE (DEBE DECIR TRUE PARA ADMIN) */}
                 <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-xl mb-6 text-xs text-slate-800 space-y-2 font-mono overflow-x-auto">
                   <div className="font-black text-amber-950 uppercase pb-1 border-b border-amber-200">
-                    🛠️ BLOQUE TEMPORAL DE DEPURACIÓN (ESTADO DEL ROL RAW):
+                    🛠️ BLOQUE DE DEPURACIÓN (ESTADO DEL ROL):
                   </div>
-                  <div>• auth.user.id: <strong className="text-slate-900">{realAuthUser.id}</strong></div>
-                  <div>• realAuthUser.isAdmin calculado: <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
-                  <div>• rol calculado final: <strong className="bg-white px-1 rounded text-slate-900 font-bold">{realAuthUser.isAdmin ? "ADMIN" : "INVERSOR"}</strong></div>
-                  <div>• vista renderizada: <strong className="bg-white px-1 rounded text-indigo-900 font-bold">{realAuthUser.isAdmin ? "BackOffice Comercial (AdminDashboard)" : "Portal Privado Inversor (InvestorPortal)"}</strong></div>
+                  <div>• auth.user.email: <strong className="text-slate-900">{realAuthUser.email}</strong></div>
+                  <div>• admin por email (regla): <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
+                  <div>• vista renderizada: <strong className="bg-white px-1 rounded text-indigo-900 font-bold">{realAuthUser.isAdmin ? "BackOffice" : "Portal Inversor"}</strong></div>
                   
                   <div className="mt-2 pt-2 border-t border-amber-200">
-                    <span className="text-[10px] font-bold text-amber-950 block mb-1">OBJETO RAW EXACTO RECIBIDO DE SUPABASE:</span>
+                    <span className="text-[10px] font-bold text-amber-950 block mb-1">OBJETO RAW:</span>
                     <pre className="bg-white p-2 rounded border border-amber-300 text-[11px] text-slate-900 max-h-40 overflow-y-auto">
-                      {JSON.stringify(realAuthUser.rawProfile || { error: 'No se obtuvo objeto raw del perfil via RPC o Select' }, null, 2)}
+                      {JSON.stringify(realAuthUser.rawProfile || { error: 'No se obtuvo objeto raw' }, null, 2)}
                     </pre>
                   </div>
                 </div>
