@@ -392,10 +392,6 @@ export default function App() {
         }}
         investors={investors}
         loggedInvestorId={loggedInvestorId}
-        setLoggedInvestorId={(id) => {
-          setLoggedInvestorId(id);
-          setIsFullyAuthenticated(true);
-        }}
         resetDatabase={handleResetDatabase}
         notifications={notifications}
         markNotifAsRead={markNotifAsRead}
