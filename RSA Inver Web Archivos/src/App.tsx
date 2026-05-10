@@ -83,14 +83,15 @@ export default function App() {
   const [adminPassInput, setAdminPassInput] = useState<string>('');
   const [adminLoginError, setAdminLoginError] = useState<string>('');
 
-  // 11. Sesión Activa de Supabase Auth en Producción Real
-  const [realAuthUser, setRealAuthUser] = useState<{ id: string; email: string; fullName: string; isAdmin: boolean } | null>(null);
+  // REQUISITOS 1, 4 Y 5: Eliminar por completo todo rastro de caché o fallbacks por defecto.
+  // No se calcula el rol hasta que termina la consulta fresca atómica.
+  const [realAuthUser, setRealAuthUser] = useState<{ id: string; email: string; fullName: string; isAdmin: boolean; rawProfile?: unknown } | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState<boolean>(true);
   const [cloudLoginEmail, setCloudLoginEmail] = useState<string>('');
   const [cloudLoginPass, setCloudLoginPass] = useState<string>('');
   const [cloudLoginErr, setCloudLoginErr] = useState<string>('');
 
-  // Efecto para inicializar sesión nativa de Supabase
+  // Efecto para inicializar sesión nativa de Supabase y forzar consulta fresca mediante RPC o select por ID
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase) {
@@ -98,11 +99,11 @@ export default function App() {
       return;
     }
 
-    // Limpiar localStorage demo cuando existe conexión a Supabase real
+    // Eliminación absoluta de cualquier caché relacionada
     localStorage.removeItem('rsa_inver_users');
     localStorage.removeItem('rsa_inver_offers');
 
-    async function checkCurrent() {
+    async function checkCurrentFresh() {
       try {
         const { data: { session } } = await supabase!.auth.getSession();
         if (!session || !session.user) {
@@ -112,19 +113,40 @@ export default function App() {
         }
 
         const user = session.user;
-        // Consultar el perfil
-        const { data: profile } = await supabase!.from('investor_profiles').select('*').eq('id', user.id).single();
+        let profileRaw: unknown = null;
+        let isAdminVal = false;
+
+        // REQUISITO 2 Y 7: Intentamos leer el rol desde la RPC inviolable get_my_profile()
+        // Si no está disponible, forzamos lectura cualificada explícita por el ID exacto.
+        const { data: rpcData, error: rpcError } = await supabase!.rpc('get_my_profile');
         
-        const isAdminVal = profile ? profile.is_admin === true : false;
+        if (!rpcError && rpcData) {
+          profileRaw = rpcData;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          isAdminVal = (rpcData as any).is_admin === true;
+        } else {
+          const { data: directData } = await supabase!
+            .from('investor_profiles')
+            .select('id, email, username, full_name, is_admin')
+            .eq('id', user.id)
+            .single();
+
+          if (directData) {
+            profileRaw = directData;
+            isAdminVal = directData.is_admin === true;
+          }
+        }
         
         setRealAuthUser({
           id: user.id,
           email: user.email || '',
-          fullName: profile?.full_name || user.user_metadata?.full_name || 'Inversor',
-          isAdmin: isAdminVal
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          fullName: (profileRaw as any)?.full_name || user.user_metadata?.full_name || 'Inversor',
+          isAdmin: isAdminVal,
+          rawProfile: profileRaw
         });
 
-        // Si existe sesión real, cargar listas reales en vez de mocks
+        // Cargar listas reales
         const resInv = await fetchRealInvestors();
         if (resInv.success) {
           setInvestors(resInv.data);
@@ -141,13 +163,13 @@ export default function App() {
       }
     }
 
-    checkCurrent();
+    checkCurrentFresh();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         setRealAuthUser(null);
       } else {
-        checkCurrent();
+        checkCurrentFresh();
       }
     });
 
@@ -572,17 +594,22 @@ export default function App() {
               
               /* USUARIO LOGUEADO EN SUPABASE: RENDERIZAR SEGÚN ROL NATIVO VERIFICADO (PREFERENCIA ADMIN) */
               <div>
-                {/* BLOQUE DE DEPURACIÓN VISIBLE EXCLUSIVO (REQUISITO 7) */}
-                <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-xl mb-6 text-xs text-slate-800 space-y-1 font-mono">
+                {/* REQUISITO 3 Y 7: BLOQUE DE DEPURACIÓN VISIBLE CON OBJETO RAW EXACTO */}
+                <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-xl mb-6 text-xs text-slate-800 space-y-2 font-mono overflow-x-auto">
                   <div className="font-black text-amber-950 uppercase pb-1 border-b border-amber-200">
-                    🛠️ BLOQUE TEMPORAL DE DEPURACIÓN (ESTADO DEL ROL):
+                    🛠️ BLOQUE TEMPORAL DE DEPURACIÓN (ESTADO DEL ROL RAW):
                   </div>
                   <div>• auth.user.id: <strong className="text-slate-900">{realAuthUser.id}</strong></div>
-                  <div>• profile.email: <strong className="text-slate-900">{realAuthUser.email}</strong></div>
-                  <div>• profile.is_admin leída en BD: <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
-                  <div>• realAuthUser.isAdmin interno: <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
+                  <div>• realAuthUser.isAdmin calculado: <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
                   <div>• rol calculado final: <strong className="bg-white px-1 rounded text-slate-900 font-bold">{realAuthUser.isAdmin ? "ADMIN" : "INVERSOR"}</strong></div>
                   <div>• vista renderizada: <strong className="bg-white px-1 rounded text-indigo-900 font-bold">{realAuthUser.isAdmin ? "BackOffice Comercial (AdminDashboard)" : "Portal Privado Inversor (InvestorPortal)"}</strong></div>
+                  
+                  <div className="mt-2 pt-2 border-t border-amber-200">
+                    <span className="text-[10px] font-bold text-amber-950 block mb-1">OBJETO RAW EXACTO RECIBIDO DE SUPABASE:</span>
+                    <pre className="bg-white p-2 rounded border border-amber-300 text-[11px] text-slate-900 max-h-40 overflow-y-auto">
+                      {JSON.stringify(realAuthUser.rawProfile || { error: 'No se obtuvo objeto raw del perfil via RPC o Select' }, null, 2)}
+                    </pre>
+                  </div>
                 </div>
 
                 <div className="bg-slate-900 text-white p-3 rounded-xl mb-6 flex flex-col sm:flex-row items-center justify-between text-xs gap-2">
