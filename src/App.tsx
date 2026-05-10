@@ -18,7 +18,7 @@ import {
   getPhaseChangeTemplate, 
   createNotification 
 } from './utils/notifications';
-import { getSupabase, fetchRealInvestors, fetchRealOffers } from './utils/supabaseClient';
+import { getSupabase, fetchRealInvestors, fetchRealOffers, isAdminEmail } from './utils/supabaseClient';
 import { Building2, Key, Lock, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -114,16 +114,19 @@ export default function App() {
 
         const user = session.user;
         let profileRaw: unknown = null;
-        let isAdminVal = false;
+        const isAdminVal = isAdminEmail(user.email);
 
         // REQUISITO 2 Y 7: Intentamos leer el rol desde la RPC inviolable get_my_profile()
         // Si no está disponible, forzamos lectura cualificada explícita por el ID exacto.
         const { data: rpcData, error: rpcError } = await supabase!.rpc('get_my_profile');
         
         if (!rpcError && rpcData) {
-          profileRaw = rpcData;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          isAdminVal = (rpcData as any).is_admin === true;
+          profileRaw = {
+            ...(typeof rpcData === 'object' && rpcData !== null ? rpcData : { value: rpcData }),
+            auth_user_email: user.email,
+            admin_by_email: isAdminVal,
+            role_source: 'ADMIN_EMAILS'
+          };
         } else {
           const { data: directData } = await supabase!
             .from('investor_profiles')
@@ -132,8 +135,12 @@ export default function App() {
             .single();
 
           if (directData) {
-            profileRaw = directData;
-            isAdminVal = directData.is_admin === true;
+            profileRaw = {
+              ...directData,
+              auth_user_email: user.email,
+              admin_by_email: isAdminVal,
+              role_source: 'ADMIN_EMAILS'
+            };
           }
         }
         
@@ -464,27 +471,19 @@ export default function App() {
                         setCloudLoginErr('Error de Supabase: ' + (res.error || 'Credenciales incorrectas en la nube.'));
                         setIsCheckingSession(false);
                       } else if (res.data) {
-                        // Evaluamos en caliente si Supabase Auth ha devuelto la bandera isAdmin
-                        if (res.data.isAdmin) {
-                          setRealAuthUser({
-                            id: res.data.id,
-                            email: res.data.email,
-                            fullName: res.data.fullName,
-                            isAdmin: true
-                          });
-                          setIsCheckingSession(false);
-                        } else {
-                          // Ocurre si la sesión existe en auth.users pero RLS o la consulta bloquean
-                          // que is_admin sea leído como true. Alertamos atómicamente:
-                          alert('⚠️ ESTADO DE TU USUARIO EN SUPABASE:\n\nEl login de tu correo (' + res.data.email + ') ha sido correcto en Supabase Auth, pero la base de datos devuelve tu perfil con la celda is_admin = FALSE.\n\nPor favor, ve a Supabase → Table Editor → investor_profiles, asegúrate de hacer doble clic sobre el "false" en la columna is_admin, escribe "true" (sin comillas) y pulsa ENTER para guardar.');
-                          setRealAuthUser({
-                            id: res.data.id,
-                            email: res.data.email,
-                            fullName: res.data.fullName,
-                            isAdmin: false
-                          });
-                          setIsCheckingSession(false);
-                        }
+                        setRealAuthUser({
+                          id: res.data.id,
+                          email: res.data.email,
+                          fullName: res.data.fullName,
+                          isAdmin: res.data.isAdmin,
+                          rawProfile: {
+                            auth_user_id: res.data.id,
+                            auth_user_email: res.data.email,
+                            admin_by_email: res.data.isAdmin,
+                            role_source: 'ADMIN_EMAILS'
+                          }
+                        });
+                        setIsCheckingSession(false);
                       }
                     } catch (err) {
                       setCloudLoginErr('Error de conexión: ' + String(err));
@@ -600,6 +599,8 @@ export default function App() {
                     🛠️ BLOQUE TEMPORAL DE DEPURACIÓN (ESTADO DEL ROL RAW):
                   </div>
                   <div>• auth.user.id: <strong className="text-slate-900">{realAuthUser.id}</strong></div>
+                  <div>• auth.user.email: <strong className="text-slate-900">{realAuthUser.email}</strong></div>
+                  <div>• admin por email: <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
                   <div>• realAuthUser.isAdmin calculado: <strong className={realAuthUser.isAdmin ? "text-emerald-600" : "text-rose-600"}>{realAuthUser.isAdmin ? "TRUE" : "FALSE"}</strong></div>
                   <div>• rol calculado final: <strong className="bg-white px-1 rounded text-slate-900 font-bold">{realAuthUser.isAdmin ? "ADMIN" : "INVERSOR"}</strong></div>
                   <div>• vista renderizada: <strong className="bg-white px-1 rounded text-indigo-900 font-bold">{realAuthUser.isAdmin ? "BackOffice Comercial (AdminDashboard)" : "Portal Privado Inversor (InvestorPortal)"}</strong></div>
