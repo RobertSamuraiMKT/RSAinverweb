@@ -1,6 +1,12 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { InvestorUser, AssetOffer, OfferPhase, MissingDoc, HistoryEntry, HistoryEventType } from '../types/inver';
 
+export const ADMIN_EMAILS = ['rsa@rsainver.com'];
+
+export function isAdminEmail(email?: string | null): boolean {
+  return ADMIN_EMAILS.includes((email || '').trim().toLowerCase());
+}
+
 // Obtener o configurar las credenciales de Supabase
 export function getSupabaseCredentials() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -449,7 +455,7 @@ export interface ActiveSessionData {
 }
 
 /**
- * Consulta la sesión actual y verifica si el usuario tiene el flag is_admin = true
+ * Consulta la sesión actual y calcula el rol visual por email autorizado.
  */
 export async function getCurrentSupabaseUser(): Promise<{ success: boolean; data?: ActiveSessionData; error?: string }> {
   const supabase = getSupabase();
@@ -467,12 +473,14 @@ export async function getCurrentSupabaseUser(): Promise<{ success: boolean; data
 
     const user = session.user;
     
-    // REQUISITOS 1, 2, 3 Y 4: Consultar la tabla filtrando por el ID exacto y seleccionando explícitamente
+    // Consultamos perfil solo para datos de presentación. El rol visual se calcula por email.
     const { data: profileData, error: profileError } = await supabase
       .from('investor_profiles')
       .select('id, email, username, full_name, is_admin')
       .eq('id', user.id)
       .single();
+
+    const adminByEmail = isAdminEmail(user.email);
 
     if (profileError) {
       console.log('🔒 [AUDITORÍA RLS/AUTH] getSession - Fallo o RLS denegado:', profileError.message);
@@ -483,20 +491,18 @@ export async function getCurrentSupabaseUser(): Promise<{ success: boolean; data
           email: user.email || '',
           fullName: user.user_metadata?.full_name || 'Inversor',
           username: user.email?.split('@')[0] || 'inversor',
-          isAdmin: false
+          isAdmin: adminByEmail
         }
       };
     }
-
-    // Evaluamos con === true garantizado
-    const isAdminCalc = profileData.is_admin === true;
 
     console.log('🔒 [AUDITORÍA RLS/AUTH] getSession - Perfil leído con éxito:');
     console.log('  • auth.user.id:', user.id);
     console.log('  • profile.id:', profileData.id);
     console.log('  • profile.email:', profileData.email);
     console.log('  • profile.is_admin devuelto por Supabase:', profileData.is_admin);
-    console.log('  • ROL CALCULADO FINAL:', isAdminCalc ? 'ADMIN' : 'INVERSOR');
+    console.log('  • admin por email:', adminByEmail);
+    console.log('  • ROL CALCULADO FINAL:', adminByEmail ? 'ADMIN' : 'INVERSOR');
 
     return {
       success: true,
@@ -505,7 +511,7 @@ export async function getCurrentSupabaseUser(): Promise<{ success: boolean; data
         email: profileData.email || user.email || '',
         fullName: profileData.full_name || user.user_metadata?.full_name || 'Inversor',
         username: profileData.username || 'inversor',
-        isAdmin: isAdminCalc
+        isAdmin: adminByEmail
       }
     };
   } catch (err: unknown) {
@@ -548,7 +554,7 @@ export async function loginWithSupabase(email: string, pass: string): Promise<{ 
       throw new Error('No se recibió el user.id tras el login');
     }
 
-    logs.push(`Consultando tabla investor_profiles para verificar is_admin...`);
+    logs.push(`Consultando tabla investor_profiles para datos de perfil...`);
     
     // REQUISITOS 1, 2, 3 Y 4: Selección explícita de columnas en Supabase
     const { data: profileData, error: profileError } = await supabase
@@ -557,8 +563,11 @@ export async function loginWithSupabase(email: string, pass: string): Promise<{ 
       .eq('id', userId)
       .single();
 
+    const adminByEmail = isAdminEmail(authData.user?.email || email);
+
     if (profileError) {
-      logs.push(`VERIFICACIÓN is_admin: FALLO o RLS denegado (${profileError.message})`);
+      logs.push(`LECTURA DE PERFIL: FALLO o RLS denegado (${profileError.message})`);
+      logs.push(`ADMIN POR EMAIL: ${adminByEmail ? 'TRUE' : 'FALSE'}`);
       console.log('🔒 [AUDITORÍA LOGIN] Fallo al consultar perfil:', profileError.message);
       return {
         success: true,
@@ -567,13 +576,11 @@ export async function loginWithSupabase(email: string, pass: string): Promise<{ 
           email: authData.user?.email || email,
           fullName: authData.user?.user_metadata?.full_name || 'Inversor',
           username: email.split('@')[0],
-          isAdmin: false
+          isAdmin: adminByEmail
         },
         debugLog: logs
       };
     }
-
-    const isAdminCalc = profileData.is_admin === true;
 
     // REQUISITO 7: Log visible/consola absoluto
     console.log('🔒 [AUDITORÍA LOGIN EXHAUSTIVO] Inicio de sesión completado:');
@@ -581,10 +588,12 @@ export async function loginWithSupabase(email: string, pass: string): Promise<{ 
     console.log('  • profile.id:', profileData.id);
     console.log('  • profile.email:', profileData.email);
     console.log('  • profile.is_admin devuelto en celda:', profileData.is_admin);
-    console.log('  • ROL CALCULADO FINAL:', isAdminCalc ? 'ADMINISTRADOR' : 'INVERSOR');
+    console.log('  • admin por email:', adminByEmail);
+    console.log('  • ROL CALCULADO FINAL:', adminByEmail ? 'ADMINISTRADOR' : 'INVERSOR');
 
-    logs.push(`VERIFICACIÓN is_admin: CONFIRMADO (is_admin = ${isAdminCalc ? 'TRUE' : 'FALSE'})`);
-    logs.push(`ROL CALCULADO: ${isAdminCalc ? 'ADMIN' : 'INVERSOR'}`);
+    logs.push(`profile.is_admin leído: ${profileData.is_admin === true ? 'TRUE' : 'FALSE'}`);
+    logs.push(`ADMIN POR EMAIL: ${adminByEmail ? 'TRUE' : 'FALSE'}`);
+    logs.push(`ROL CALCULADO: ${adminByEmail ? 'ADMIN' : 'INVERSOR'}`);
 
     return {
       success: true,
@@ -593,7 +602,7 @@ export async function loginWithSupabase(email: string, pass: string): Promise<{ 
         email: profileData.email || authData.user?.email || email,
         fullName: profileData.full_name || authData.user?.user_metadata?.full_name || 'Inversor',
         username: profileData.username || email.split('@')[0],
-        isAdmin: isAdminCalc
+        isAdmin: adminByEmail
       },
       debugLog: logs
     };
